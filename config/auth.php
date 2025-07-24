@@ -36,21 +36,17 @@ return [
     */
 
     'guards' => [
-        'api' => [
-            'driver' => 'jwt',
+        'web' => [
+            'driver' => 'session',
             'provider' => 'users',
         ],
-
-        'admin' => [
-            'driver' => 'jwt', // أو 'session' إذا كنت تفضل ذلك
-            'provider' => 'admin',
-        ],
-
         'chef' => [
-            'driver' => 'jwt', // أو 'session' إذا كنت تفضل ذلك
+            'driver' => 'session', // لأن Sanctum يعتمد على هذا في auth middleware
             'provider' => 'chef',
         ],
     ],
+
+
 
 
     /*

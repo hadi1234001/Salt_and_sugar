@@ -1,124 +1,193 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api;
 
-use App\Http\Resources\ChefResource;
-use Illuminate\Http\Request;
 use App\Models\Chef;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
-use Tymon\JWTAuth\Facades\JWTAuth;
-
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Auth;
 class ChefController extends Controller
 {
+
     public function index()
     {
-        $chefs = Chef::all();
-        return ChefResource::collection($chefs);
+        try {
+            return response()->json(Chef::with('state')->get());
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 
-    public function create()
-    {
-        return response()->json(['message' => 'Not using in API'], Response::HTTP_METHOD_NOT_ALLOWED);
-    }
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'user_name' => 'required|string|max:255',
-            'first_name' => 'required|string|max:255',
-            'second_name' => 'required|string|max:255',
-            'three_name' => 'required|string|max:255',
-            'image_path' => 'required|string|max:255',
-            'email' => 'required|email|unique:chefs,email',
-            'password' => 'required|string|min:6',
-            'birth_date' => 'required|date',
-            'mobile_number' => 'required|string|max:20',
-            'cv_path' => 'nullable|string|max:255',
-            'location' => 'required|string|max:255',
-            'state_id' => 'required|exists:states,state_id',
-        ]);
+
+        try {
+
+            $request->validate([
+                'user_name' => 'required|string|unique:chefs,user_name',
+                'first_name' => 'required|string|max:255',
+                'second_name' => 'nullable|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'email' => 'required|email|unique:chefs,email',
+                'password' => 'required|string|min:6',
+                'mobile_number' => 'nullable|string|max:20',
+                'birth_date' => 'nullable|date',
+                'overview' => 'nullable|string',
+                'state_id' => 'nullable|exists:states,state_id',
+                'latitude' => 'nullable|numeric',
+                'longitude' => 'nullable|numeric',
+                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'cv' => 'nullable|mimes:pdf,doc,docx|max:10240',
+            ]);
+
+            $data = $request->except(['image', 'cv', 'password']);
+            $data['password'] = Hash::make($request->password);
 
 
-        $chef = Chef::create($validated);
+            if ($request->hasFile('image')) {
+                $data['image_path'] = $request->file('image')->store('chefs/images', 'public');
+            }
 
 
-        return response()->json($chef, Response::HTTP_OK);
+            if ($request->hasFile('cv')) {
+                $data['cv_path'] = $request->file('cv')->store('chefs/cvs', 'public');
+            }
+
+            $chef = Chef::create($data);
+            return response()->json($chef, 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 
-    public function show(string $id)
+    public function show($id)
     {
+        $chef = Chef::with('state')->find($id);
 
-        // $chef = Chef::where('chef_id', $id)->first();
-        $chef = Chef::findOrFail($id);
-        return new ChefResource($chef);
-    }
-
-    public function edit(string $id)
-    {
-        return response()->json(['message' => 'Not using in API'], Response::HTTP_METHOD_NOT_ALLOWED);
-    }
-
-
-    public function update(Request $request, string $id)
-    {
-        $chef= Chef::findOrFail($id);
-        $request->validate([
-            'user_name' => 'required|string|max:255',
-            'first_name' => 'required|string|max:255',
-            'second_name' => 'required|string|max:255',
-            'three_name' => 'required|string|max:255',
-            'image_path' => 'required|string|max:255',
-            'email' => 'required|email|unique:chefs,email,' . $chef->chef_id . ',chef_id',
-            'password' => 'required|string|min:6',
-            'birth_date' => 'required|date',
-            'mobile_number' => 'required|string|max:20',
-            'cv_path' => 'nullable|string|max:255',
-            'location' => 'required|string|max:255',
-            'state_id' => 'required|exists:states,state_id',
-        ]);
-        $chef->update($request->only([
-            'user_name',
-            'first_name',
-            'second_name',
-            'three_name',
-            'image_path',
-            'email',
-            'password',
-            'birth_date',
-            'mobile_number',
-            'cv_path',
-            'location',
-            'state_id'
-        ]));
-        return response()->json($chef, Response::HTTP_OK);
-    }
-
-    public function destroy(string $id)
-    {
-        $chef = Chef::findOrFail($id);
-        $chef->delete();
-        return response()->json(null, 204);
-    }
-
-    public function login(Request $request)
-    {
-
-        $request->validate([
-            'username' => 'required',
-            'password' => 'required',
-        ]);
-
-        $chef = Chef::findOrFail( $request->username );
-
-        if (!$chef || !Hash::check($request->password, $chef->password)) {
-
-            $token = JWTAuth::fromUser($chef);
-
-            return response()->json(['token' => $token]);
+        if (!$chef) {
+            return response()->json([
+                'message' => 'الشيف غير موجود',
+                'id' => $id
+            ], 404);
         }
 
-
-        return response()->json(['error' => $chef], 401);
+        return response()->json($chef);
     }
+
+
+    public function update(Request $request, $id)
+    {
+        try{
+        $chef = Chef::find($id);
+
+        if (!$chef) {
+            return response()->json([
+                'message' => 'الشيف غير موجود',
+                'id' => $id
+            ], 404);
+        }
+
+        $request->validate([
+            'user_name' => 'string|unique:chefs,user_name,' . $id . ',chef_id',
+            'first_name' => 'string|max:255',
+            'second_name' => 'nullable|string|max:255',
+            'last_name' => 'string|max:255',
+            'email' => 'email|unique:chefs,email,' . $id . ',chef_id',
+            'password' => 'nullable|string|min:6',
+            'mobile_number' => 'nullable|string|max:20',
+            'birth_date' => 'nullable|date',
+            'overview' => 'nullable|string',
+            'state_id' => 'nullable|exists:states,state_id',
+            'latitude' => 'nullable|numeric',
+            'longitude' => 'nullable|numeric',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'cv' => 'nullable|mimes:pdf,doc,docx|max:10240',
+        ]);
+
+        $data = $request->except(['image', 'cv', 'password']);
+
+        if ($request->filled('password')) {
+            $data['password'] = Hash::make($request->password);
+        }
+
+        if ($request->hasFile('image')) {
+            if ($chef->image_path) {
+                Storage::disk('public')->delete($chef->image_path);
+            }
+            $data['image_path'] = $request->file('image')->store('chefs/images', 'public');
+        }
+
+        // حذف ملف CV القديم إذا تم رفع ملف جديد
+        if ($request->hasFile('cv')) {
+            if ($chef->cv_path) {
+                Storage::disk('public')->delete($chef->cv_path);
+            }
+            $data['cv_path'] = $request->file('cv')->store('chefs/cvs', 'public');
+        }
+
+        $chef->update($data);
+        return response()->json($chef);
+    }catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+
+    public function destroy($id)
+    {
+        $chef = Chef::find($id);
+
+        if (!$chef) {
+            return response()->json([
+                'message' => 'الشيف غير موجود',
+                'id' => $id
+            ], 404);
+        }
+
+        // حذف الصورة وملف CV من السيرفر
+        if ($chef->image_path) {
+            Storage::disk('public')->delete($chef->image_path);
+        }
+        if ($chef->cv_path) {
+            Storage::disk('public')->delete($chef->cv_path);
+        }
+
+        $chef->delete();
+
+        return response()->json([
+            'message' => 'تم حذف الشيف بنجاح',
+            'id' => $id
+        ], 200);
+    }
+
+
+public function login(Request $request)
+{
+    try {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
+
+        $chef = Chef::where('email', $credentials['email'])->first();
+
+        if (!$chef || !Hash::check($credentials['password'], $chef->password)) {
+            return response()->json(['message' => 'بيانات الدخول غير صحيحة'], 401);
+        }
+
+        // إنشاء رمز مميز (Token) باستخدام Sanctum أو JWT
+        $token = $chef->createToken('chef-token')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'chef' => $chef
+        ]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
+
 }

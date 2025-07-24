@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Distributer extends Model
 {
     use HasFactory;
-
+protected $table = 'distributors';
     protected $primaryKey = 'distributer_id';
     protected $fillable = [
         'user_name',
@@ -21,13 +21,13 @@ class Distributer extends Model
         'chef_id',
         'vehicle_id',
     ];
-  
+
     public function chef()
     {
         return $this->belongsTo(Chef::class, 'chef_id', 'chef_id');
     }
 
-    
+
     public function vehicle()
     {
         return $this->belongsTo(Vehicle::class, 'vehicle_id', 'vehicle_id');
